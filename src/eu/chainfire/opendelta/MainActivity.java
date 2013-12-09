@@ -42,9 +42,12 @@ import android.widget.Button;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 
+import java.io.FileInputStream;
+
 import java.util.Calendar;
 import java.util.Date;
 import java.util.Locale;
+import java.util.Properties;
 
 public class MainActivity extends Activity {
     private TextView title = null;
@@ -52,6 +55,7 @@ public class MainActivity extends Activity {
     private ProgressBar progress = null;
     private Button checkNow = null;
     private Button flashNow = null;
+    private boolean isPatched = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -74,6 +78,27 @@ public class MainActivity extends Activity {
         progress = (ProgressBar) findViewById(R.id.progress);
         checkNow = (Button) findViewById(R.id.button_check_now);
         flashNow = (Button) findViewById(R.id.button_flash_now);
+
+        // If the ROM is patched, we cannot allow flashing
+        Properties prop = new Properties();
+        FileInputStream fis = null;
+        try {
+            fis = new FileInputStream("/system/build.prop");
+            prop.load(fis);
+        }
+        catch (Exception e) {}
+        finally {
+            try {
+                if (fis != null) {
+                    fis.close();
+                }
+            }
+            catch (Exception e) {}
+        }
+
+        if (prop.getProperty("ro.chenxiaolong.patched", "false").equals("true")) {
+            isPatched = true;
+        }
     }
 
     @Override
@@ -194,10 +219,15 @@ public class MainActivity extends Activity {
                 if (ms == 0) {
                     return "";
                 } else {
-                    return String.format("%s\n%s", filename, getString(R.string.last_checked,
+                    String patcher = "";
+                    if (isPatched) {
+                        patcher = "The currently running ROM has been patched by chenxiaolong's dual boot patcher. Please patch and flash the update zip manually.";
+                    }
+
+                    return String.format("%s\n%s\n\n%s", filename, getString(R.string.last_checked,
                             DateFormat.getDateFormat(MainActivity.this).format(date),
                             DateFormat.getTimeFormat(MainActivity.this).format(date)
-                            ));
+                            ), patcher);
                 }
             }
         }
@@ -285,7 +315,7 @@ public class MainActivity extends Activity {
             progress.setMax((int) total);
 
             checkNow.setVisibility(enableCheck ? View.VISIBLE : View.GONE);
-            flashNow.setVisibility(enableFlash ? View.VISIBLE : View.GONE);
+            flashNow.setVisibility(enableFlash && !isPatched ? View.VISIBLE : View.GONE);
         }
     };
 

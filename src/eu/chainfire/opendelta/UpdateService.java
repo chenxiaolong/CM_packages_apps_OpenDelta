@@ -65,6 +65,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class 
         UpdateService
@@ -160,6 +162,7 @@ public class
     private String url_base_delta;
     private String url_base_update;
     private String url_base_full;
+    private String url_date;
     private boolean apply_signature;
 
     private HandlerThread handlerThread;
@@ -241,8 +244,16 @@ public class
                 property_device);
         url_base_update = String.format(Locale.ENGLISH, getString(R.string.url_base_update),
                 property_device);
+
+        Pattern p = Pattern.compile("^[^-]+-([0-9]+)-.*$");
+        Matcher m = p.matcher(property_version);
+        url_date = "";
+        if (m.find()) {
+            url_date = m.group(1);
+        }
+
         url_base_full = String.format(Locale.ENGLISH, getString(R.string.url_base_full),
-                property_device);
+                property_device, url_date);
         apply_signature = getResources().getBoolean(R.bool.apply_signature);
 
         Logger.d("property_version: %s", property_version);
