@@ -47,4 +47,6 @@
 
     <string name="button_check_now">Check now &#8230;</string>
     <string name="button_flash_now">Flash now</string>
+
+    <string name="must_have_patcher">This ROM is currently installed in a multi-boot configuration. You must have the Dual Boot Patcher installed for automatic updates.</string>
 </resources>

@@ -56,6 +56,7 @@ import org.apache.http.params.HttpConnectionParams;
 import org.apache.http.params.HttpParams;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.lang.reflect.Method;
@@ -65,6 +66,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
+import java.util.Properties;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -91,6 +93,10 @@ public class
         start(context, ACTION_FLASH);
     }
 
+    public static void startGetFilepath(Context context) {
+        start(context, ACTION_GET_FILEPATH);
+    }
+
     private static void start(Context context, String action) {
         Intent i = new Intent(context, UpdateService.class);
         i.setAction(action);
@@ -115,6 +121,7 @@ public class
     public static final String EXTRA_CURRENT = "eu.chainfire.opendelta.extra.CURRENT";
     public static final String EXTRA_TOTAL = "eu.chainfire.opendelta.extra.TOTAL";
     public static final String EXTRA_FILENAME = "eu.chainfire.opendelta.extra.FILENAME";
+    public static final String EXTRA_FULL_FILENAME = "eu.chainfire.opendelta.extra.FULL_FILENAME";
     public static final String EXTRA_MS = "eu.chainfire.opendelta.extra.MS";
 
     public static final String STATE_ACTION_NONE = "action_none";
@@ -127,12 +134,14 @@ public class
     public static final String STATE_ACTION_APPLYING_PATCH = "action_applying_patch";
     public static final String STATE_ACTION_APPLYING_MD5 = "action_applying_md5";
     public static final String STATE_ACTION_READY = "action_ready";
+    public static final String STATE_ACTION_GOT_FILEPATH = "action_got_filepath";
     public static final String STATE_ERROR_DISK_SPACE = "error_disk_space";
     public static final String STATE_ERROR_UNKNOWN = "error_unknown";
 
     private static final String ACTION_CHECK = "eu.chainfire.opendelta.action.CHECK";
     private static final String ACTION_FLASH = "eu.chainfire.opendelta.action.FLASH";
     private static final String ACTION_ALARM = "eu.chainfire.opendelta.action.ALARM";
+    private static final String ACTION_GET_FILEPATH = "eu.chainfire.opendelta.action.GET_FILEPATH";
     private static final String EXTRA_ALARM_ID = "eu.chainfire.opendelta.extra.ALARM_ID";
 
     private static final int NOTIFICATION_BUSY = 1;
@@ -162,7 +171,6 @@ public class
     private String url_base_delta;
     private String url_base_update;
     private String url_base_full;
-    private String url_date;
     private boolean apply_signature;
 
     private HandlerThread handlerThread;
@@ -244,16 +252,8 @@ public class
                 property_device);
         url_base_update = String.format(Locale.ENGLISH, getString(R.string.url_base_update),
                 property_device);
-
-        Pattern p = Pattern.compile("^[^-]+-([0-9]+)-.*$");
-        Matcher m = p.matcher(property_version);
-        url_date = "";
-        if (m.find()) {
-            url_date = m.group(1);
-        }
-
         url_base_full = String.format(Locale.ENGLISH, getString(R.string.url_base_full),
-                property_device, url_date);
+                property_device);
         apply_signature = getResources().getBoolean(R.bool.apply_signature);
 
         Logger.d("property_version: %s", property_version);
@@ -314,6 +314,11 @@ public class
                 flashUpdate();
             } else if (ACTION_ALARM.equals(intent.getAction())) {
                 scheduler.alarm(intent.getIntExtra(EXTRA_ALARM_ID, -1));
+            } else if (ACTION_GET_FILEPATH.equals(intent.getAction())) {
+                Intent i = new Intent(BROADCAST_INTENT);
+                i.putExtra(EXTRA_STATE, STATE_ACTION_GOT_FILEPATH);
+                i.putExtra(EXTRA_FULL_FILENAME, getFullPath(false));
+                sendBroadcast(i);
             }
         }
 
@@ -530,7 +535,7 @@ public class
         if (base == null)
             base = Environment.getExternalStorageDirectory();
 
-        Logger.d("scanning: %s", base.getAbsolutePath());
+        //Logger.d("scanning: %s", base.getAbsolutePath());
         File[] list = base.listFiles();
         if (list != null) {
             for (File f : list) {
@@ -862,7 +867,18 @@ public class
 
         if (getFull) {
             filename[0] = lastDelta.getOut().getName();
-            if (!downloadDeltaFile(url_base_full, lastDelta.getOut(), lastDelta.getOut()
+            String temp_url = url_base_full;
+
+            Pattern p = Pattern.compile("^[^-]+-[^-]+-([0-9]+)-.*$");
+            Matcher m = p.matcher(lastDelta.getOut().getName());
+            String url_date = "";
+            if (m.find()) {
+                url_date = m.group(1);
+            }
+
+            temp_url = temp_url.replace("@DATE@", url_date);
+
+            if (!downloadDeltaFile(temp_url, lastDelta.getOut(), lastDelta.getOut()
                     .getOfficial(), progressListener, force)) {
                 updateState(STATE_ERROR_UNKNOWN, null, null, null, null, null);
                 Logger.d("download error");
@@ -966,6 +982,45 @@ public class
         return true;
     }
 
+    public static String getPartConfig() {
+        Properties prop = new Properties();
+        FileInputStream fis = null;
+        try {
+            fis = new FileInputStream("/system/build.prop");
+            prop.load(fis);
+        }
+        catch (Exception e) {}
+        finally {
+            try {
+                if (fis != null) {
+                    fis.close();
+                }
+            }
+            catch (Exception e) {}
+        }
+
+        String ret = prop.getProperty("ro.chenxiaolong.patched", "NULL");
+        return ret.equals("NULL") ? null : ret;
+    }
+
+    private String getFullPath(boolean patched) {
+        String flashFilename = prefs.getString(PREF_READY_FILENAME_NAME,
+                PREF_READY_FILENAME_DEFAULT);
+        if ((flashFilename == null) || !flashFilename.startsWith(path_base))
+            return null;
+
+        // Remove the path to the storage from the filename, so we get a path
+        // relative to the root of the storage
+        String path_sd = Environment.getExternalStorageDirectory() + File.separator;
+        flashFilename = flashFilename.substring(path_sd.length());
+
+        if (patched) {
+            return flashFilename.replace(".zip", "_" + getPartConfig() + ".zip");
+        } else {
+            return flashFilename;
+        }
+    }
+
     @SuppressLint("SdCardPath")
     private void flashUpdate() {
         if (getPackageManager().checkPermission(PERMISSION_ACCESS_CACHE_FILESYSTEM,
@@ -979,16 +1034,20 @@ public class
             return;
         }
 
-        String flashFilename = prefs.getString(PREF_READY_FILENAME_NAME,
-                PREF_READY_FILENAME_DEFAULT);
+        String flashFilename;
+        if (getPartConfig() != null) {
+            flashFilename = getFullPath(true);
+        } else {
+            flashFilename = getFullPath(false);
+        }
+
         prefs.edit().putString(PREF_READY_FILENAME_NAME, PREF_READY_FILENAME_DEFAULT).commit();
-        if ((flashFilename == null) || !flashFilename.startsWith(path_base))
+        if (flashFilename == null)
             return;
 
         // Remove the path to the storage from the filename, so we get a path
         // relative to the root of the storage
         String path_sd = Environment.getExternalStorageDirectory() + File.separator;
-        flashFilename = flashFilename.substring(path_sd.length());
 
         // Find additional ZIPs to flash
         List<String> extras = new ArrayList<String>();
@@ -1017,19 +1076,35 @@ public class
             // storage root for the ZIPs,
             // life is nice and easy.
             if ((flashFilename != null) && (!flashFilename.equals(""))) {
-                FileOutputStream os = new FileOutputStream("/cache/recovery/openrecoveryscript",
-                        false);
+                FileOutputStream os;
+                if (getPartConfig() != null) {
+                    os = new FileOutputStream("/raw-cache/recovery/openrecoveryscript",
+                            false);
+                } else {
+                    os = new FileOutputStream("/cache/recovery/openrecoveryscript",
+                            false);
+                }
                 try {
                     os.write(String.format("install %s\n", flashFilename).getBytes("UTF-8"));
                     for (String file : extras) {
                         os.write(String.format("install %s\n", file).getBytes("UTF-8"));
                     }
-                    os.write(("wipe cache\n").getBytes("UTF-8"));
+                    if (getPartConfig() != null) {
+                        // Don't wipe /cache in multi-boot configuration because
+                        // that's where the ROM is installed. If we need to
+                        // remove any specific files, we can do that one by one.
+                    } else {
+                        os.write(("wipe cache\n").getBytes("UTF-8"));
+                    }
                 } finally {
                     os.close();
                 }
             }
-            setPermissions("/cache/recovery/openrecoveryscript", 0644, Process.myUid(), 2001 /* AID_CACHE */);
+            if (getPartConfig() != null) {
+                setPermissions("/raw-cache/recovery/openrecoveryscript", 0644, Process.myUid(), 2001 /* AID_CACHE */);
+            } else {
+                setPermissions("/cache/recovery/openrecoveryscript", 0644, Process.myUid(), 2001 /* AID_CACHE */);
+            }
 
             // CWM - ExtendedCommand - provide paths to both internal and
             // external storage locations, it's nigh impossible to know in
@@ -1040,7 +1115,12 @@ public class
             // results, but it seems to continue installing even if one ZIP
             // fails and produce the wanted result. Better than nothing ...
             if ((flashFilename != null) && (!flashFilename.equals(""))) {
-                FileOutputStream os = new FileOutputStream("/cache/recovery/extendedcommand", false);
+                FileOutputStream os;
+                if (getPartConfig() != null) {
+                    os = new FileOutputStream("/raw-cache/recovery/extendedcommand", false);
+                } else {
+                    os = new FileOutputStream("/cache/recovery/extendedcommand", false);
+                }
                 try {
                     os.write(String.format("install_zip(\"%s%s\");\n", "/sdcard/", flashFilename)
                             .getBytes("UTF-8"));
@@ -1052,13 +1132,23 @@ public class
                         os.write(String.format("install_zip(\"%s%s\");\n", "/emmc/", file)
                                 .getBytes("UTF-8"));
                     }
-                    os.write(("run_program(\"/sbin/busybox\", \"rm\", \"-rf\", \"/cache/*\");\n")
-                            .getBytes("UTF-8"));
+                    if (getPartConfig() != null) {
+                        // Don't wipe /cache in multi-boot configuration because
+                        // that's where the ROM is installed. If we need to
+                        // remove any specific files, we can do that one by one.
+                    } else {
+                        os.write(("run_program(\"/sbin/busybox\", \"rm\", \"-rf\", \"/cache/*\");\n")
+                                .getBytes("UTF-8"));
+                    }
                 } finally {
                     os.close();
                 }
             }
-            setPermissions("/cache/recovery/extendedcommand", 0644, Process.myUid(), 2001 /* AID_CACHE */);
+            if (getPartConfig() != null) {
+                setPermissions("/raw-cache/recovery/extendedcommand", 0644, Process.myUid(), 2001 /* AID_CACHE */);
+            } else {
+                setPermissions("/cache/recovery/extendedcommand", 0644, Process.myUid(), 2001 /* AID_CACHE */);
+            }
 
             ((PowerManager) getSystemService(Context.POWER_SERVICE)).reboot("recovery");
         } catch (Exception e) {

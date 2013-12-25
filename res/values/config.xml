@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Output some debug strings -->
-    <item type="bool" name="debug_output">false</item>
+    <item type="bool" name="debug_output">true</item>
 
     <!-- Property to read for ROM version -->
     <string name="property_version">ro.cm.version</string>
@@ -22,7 +22,7 @@
     <string name="url_base_update">https://downloads.sourceforge.net/project/unofficial-cm/UpdateDelta/%s/</string>
 
     <!-- URL base to find the full zip files, the first %s is expanded to property_device value. The second %s is expanded to the appropriate date. Path is suffixed by (expanded) filename_base -->
-    <string name="url_base_full">https://downloads.sourceforge.net/project/unofficial-cm/Nightlies/%1$s/%2$s/</string>
+    <string name="url_base_full">https://downloads.sourceforge.net/project/unofficial-cm/Nightlies/%s/@DATE@/</string>
 
     <!-- Applies whole-file signature delta. Adds one extra delta step. Required if recovery verifies signatures -->
     <item type="bool" name="apply_signature">false</item>

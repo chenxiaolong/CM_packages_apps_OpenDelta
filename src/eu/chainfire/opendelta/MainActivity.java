@@ -30,8 +30,11 @@ import android.content.DialogInterface.OnClickListener;
 import android.content.DialogInterface.OnMultiChoiceClickListener;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.content.SharedPreferences;
 import android.os.Bundle;
+import android.os.Environment;
 import android.preference.PreferenceManager;
 import android.text.Html;
 import android.text.format.DateFormat;
@@ -42,12 +45,11 @@ import android.widget.Button;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 
-import java.io.FileInputStream;
-
+import java.io.File;
 import java.util.Calendar;
 import java.util.Date;
+import java.util.List;
 import java.util.Locale;
-import java.util.Properties;
 
 public class MainActivity extends Activity {
     private TextView title = null;
@@ -55,7 +57,11 @@ public class MainActivity extends Activity {
     private ProgressBar progress = null;
     private Button checkNow = null;
     private Button flashNow = null;
-    private boolean isPatched = false;
+
+    private static final String PATCH_FILE = "com.github.chenxiaolong.dualbootpatcher.PATCH_FILE";
+    private static final int REQUEST_PATCH_FILE = 1234;
+    private String partConfig = null;
+    private boolean patcherAvailable = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -79,25 +85,15 @@ public class MainActivity extends Activity {
         checkNow = (Button) findViewById(R.id.button_check_now);
         flashNow = (Button) findViewById(R.id.button_flash_now);
 
-        // If the ROM is patched, we cannot allow flashing
-        Properties prop = new Properties();
-        FileInputStream fis = null;
-        try {
-            fis = new FileInputStream("/system/build.prop");
-            prop.load(fis);
-        }
-        catch (Exception e) {}
-        finally {
-            try {
-                if (fis != null) {
-                    fis.close();
-                }
-            }
-            catch (Exception e) {}
-        }
+        partConfig = UpdateService.getPartConfig();
 
-        if (prop.getProperty("ro.chenxiaolong.patched", "false").equals("true")) {
-            isPatched = true;
+        Intent i = new Intent(PATCH_FILE);
+        i.addCategory(Intent.CATEGORY_DEFAULT);
+        PackageManager manager = getPackageManager();
+        List<ResolveInfo> list = manager.queryIntentActivities(i, 0);
+
+        if (list != null && list.size() > 0) {
+            patcherAvailable = true;
         }
     }
 
@@ -220,8 +216,8 @@ public class MainActivity extends Activity {
                     return "";
                 } else {
                     String patcher = "";
-                    if (isPatched) {
-                        patcher = "The currently running ROM has been patched by chenxiaolong's dual boot patcher. Please patch and flash the update zip manually.";
+                    if (partConfig != null && !patcherAvailable) {
+                        patcher = getString(R.string.must_have_patcher);
                     }
 
                     return String.format("%s\n%s\n\n%s", filename, getString(R.string.last_checked,
@@ -268,6 +264,9 @@ public class MainActivity extends Activity {
                 enableFlash = true;
                 sub = formatLastChecked(intent.getStringExtra(UpdateService.EXTRA_FILENAME),
                         intent.getLongExtra(UpdateService.EXTRA_MS, 0));
+            } else if (UpdateService.STATE_ACTION_GOT_FILEPATH.equals(state)) {
+                // Got full path to file, start patching
+                patchFile(intent.getStringExtra(UpdateService.EXTRA_FULL_FILENAME));
             } else {
                 current = intent.getLongExtra(UpdateService.EXTRA_CURRENT, current);
                 total = intent.getLongExtra(UpdateService.EXTRA_TOTAL, total);
@@ -315,7 +314,11 @@ public class MainActivity extends Activity {
             progress.setMax((int) total);
 
             checkNow.setVisibility(enableCheck ? View.VISIBLE : View.GONE);
-            flashNow.setVisibility(enableFlash && !isPatched ? View.VISIBLE : View.GONE);
+            boolean flashVisible = false;
+            if (partConfig == null || (partConfig != null && patcherAvailable)) {
+                flashVisible = true;
+            }
+            flashNow.setVisibility(enableFlash && flashVisible ? View.VISIBLE : View.GONE);
         }
     };
 
@@ -336,8 +339,38 @@ public class MainActivity extends Activity {
     }
 
     public void onButtonFlashNowClick(View v) {
-        UpdateService.startFlash(this);
+        if (partConfig != null) {
+            UpdateService.startGetFilepath(this);
+        } else {
+            UpdateService.startFlash(this);
+        }
+
         checkNow.setEnabled(false);
         flashNow.setEnabled(false);
+    }
+
+    private void patchFile(String path) {
+        Intent i = new Intent(PATCH_FILE);
+        i.addCategory(Intent.CATEGORY_DEFAULT);
+        i.putExtra("zipFile", Environment.getExternalStorageDirectory()
+                + File.separator + path);
+        i.putExtra("partConfig", partConfig);
+        startActivityForResult(i, REQUEST_PATCH_FILE);
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (resultCode == RESULT_OK) {
+            if (requestCode == REQUEST_PATCH_FILE) {
+                boolean failed = data.getExtras().getBoolean("failed");
+                String message = data.getExtras().getString("message");
+                String newZipFile = data.getExtras().getString("newZipFile");
+
+                // TODO: Actually use failed and newZipFile. For now, assume
+                // that the patching won't fail
+                UpdateService.startFlash(this);
+            }
+        }
     }
 }
