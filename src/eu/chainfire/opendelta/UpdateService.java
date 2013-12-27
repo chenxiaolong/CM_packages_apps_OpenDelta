@@ -1089,13 +1089,10 @@ public class
                     for (String file : extras) {
                         os.write(String.format("install %s\n", file).getBytes("UTF-8"));
                     }
-                    if (getPartConfig() != null) {
-                        // Don't wipe /cache in multi-boot configuration because
-                        // that's where the ROM is installed. If we need to
-                        // remove any specific files, we can do that one by one.
-                    } else {
-                        os.write(("wipe cache\n").getBytes("UTF-8"));
-                    }
+                    // Don't wipe /cache because that's where multi-boor ROMs
+                    // are installed. If we need to remove any specific files,
+                    // we can do that one by one.
+                    //os.write(("wipe cache\n").getBytes("UTF-8"));
                 } finally {
                     os.close();
                 }
@@ -1132,14 +1129,11 @@ public class
                         os.write(String.format("install_zip(\"%s%s\");\n", "/emmc/", file)
                                 .getBytes("UTF-8"));
                     }
-                    if (getPartConfig() != null) {
-                        // Don't wipe /cache in multi-boot configuration because
-                        // that's where the ROM is installed. If we need to
-                        // remove any specific files, we can do that one by one.
-                    } else {
-                        os.write(("run_program(\"/sbin/busybox\", \"rm\", \"-rf\", \"/cache/*\");\n")
-                                .getBytes("UTF-8"));
-                    }
+                    // Don't wipe /cache because that's where multi-boor ROMs
+                    // are installed. If we need to remove any specific files,
+                    // we can do that one by one.
+                    //os.write(("run_program(\"/sbin/busybox\", \"rm\", \"-rf\", \"/cache/*\");\n")
+                    //        .getBytes("UTF-8"));
                 } finally {
                     os.close();
                 }
